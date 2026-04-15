@@ -1,14 +1,14 @@
 const express = require("express");
-const router = express.Router();
-const pool = require("../config/db");
+const router  = express.Router();
+const pool    = require("../config/db");
 
 // GET /api/phases
-// Returns all statuses ordered by sortOrder.
-// Used by the Kanban board to build columns dynamically.
+// Returns all phases ordered by sortOrder.
+// These are the Kanban board columns.
 router.get("/", async (req, res) => {
   try {
     const [rows] = await pool.query(
-      "SELECT * FROM phases ORDER BY sortOrder ASC",
+      "SELECT * FROM phases ORDER BY sortOrder ASC"
     );
     res.json(rows);
   } catch (err) {
@@ -27,11 +27,9 @@ router.post("/", async (req, res) => {
   try {
     const [result] = await pool.query(
       "INSERT INTO phases (label, sortOrder, isDefault, isFinal) VALUES (?, ?, ?, ?)",
-      [label.trim(), sortOrder, isDefault ? 1 : 0, isFinal ? 1 : 0],
+      [label.trim(), sortOrder, isDefault ? 1 : 0, isFinal ? 1 : 0]
     );
-    const [rows] = await pool.query("SELECT * FROM phases WHERE id = ?", [
-      result.insertId,
-    ]);
+    const [rows] = await pool.query("SELECT * FROM phases WHERE id = ?", [result.insertId]);
     res.status(201).json(rows[0]);
   } catch (err) {
     if (err.code === "ER_DUP_ENTRY")
@@ -49,7 +47,7 @@ router.put("/:id", async (req, res) => {
   try {
     await pool.query(
       "UPDATE phases SET label = ?, sortOrder = ?, isDefault = ?, isFinal = ? WHERE id = ?",
-      [label, sortOrder, isDefault ? 1 : 0, isFinal ? 1 : 0, id],
+      [label, sortOrder, isDefault ? 1 : 0, isFinal ? 1 : 0, id]
     );
     const [rows] = await pool.query("SELECT * FROM phases WHERE id = ?", [id]);
     res.json(rows[0]);
@@ -60,18 +58,17 @@ router.put("/:id", async (req, res) => {
 });
 
 // DELETE /api/phases/:id
-// Blocked if any tasks are using this phase (SRS §1.2 referential integrity).
+// Blocked if any tasks are using this phase (referential integrity).
 router.delete("/:id", async (req, res) => {
   const { id } = req.params;
   try {
     const [tasks] = await pool.query(
-      "SELECT COUNT(*) AS count FROM tasks WHERE statusId = ?",
-      [id],
+      "SELECT COUNT(*) AS count FROM tasks WHERE phaseId = ?",
+      [id]
     );
     if (tasks[0].count > 0) {
       return res.status(400).json({
-        message:
-          "Cannot delete: This phase is currently in use by active tasks.",
+        message: "Cannot delete: This phase is currently in use by active tasks.",
       });
     }
     await pool.query("DELETE FROM phases WHERE id = ?", [id]);

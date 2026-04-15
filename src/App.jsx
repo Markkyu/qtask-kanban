@@ -1,17 +1,18 @@
 import { useState, useCallback, useEffect } from "react";
 
-import KanbanBoard from "./components/board/KanbanBoard";
-import DoneModal from "./components/modals/DoneModal";
-import AddTaskModal from "./components/modals/AddTaskModal";
-import AddColumnModal from "./components/modals/AddColumnModal";
+import KanbanBoard     from "./components/board/KanbanBoard";
+import DoneModal       from "./components/modals/DoneModal";
+import AddTaskModal    from "./components/modals/AddTaskModal";
+import AddColumnModal  from "./components/modals/AddColumnModal";
 import TaskDetailModal from "./components/modals/TaskDetailModal";
 
 import {
+  fetchPhases,
   fetchStatuses,
   fetchSeverities,
   fetchTasks,
   fetchUsers,
-  createStatus,
+  createPhase,
   moveTask,
   createTask,
   updateTask,
@@ -20,30 +21,35 @@ import {
 } from "./services/api";
 
 export default function App() {
-  const [statuses, setStatuses] = useState([]);
-  const [severities, setSeverities] = useState([]);
-  const [tasks, setTasks] = useState([]);
-  const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [renderKey, setRenderKey] = useState(0);
-  const [doneModal, setDoneModal] = useState(null);
-  const [showAddTask, setShowAddTask] = useState(false);
+  // phases drive the Kanban columns
+  const [phases,      setPhases]      = useState([]);
+  // statuses are a secondary task attribute shown in detail view
+  const [statuses,    setStatuses]    = useState([]);
+  const [severities,  setSeverities]  = useState([]);
+  const [tasks,       setTasks]       = useState([]);
+  const [users,       setUsers]       = useState([]);
+  const [loading,     setLoading]     = useState(true);
+  const [error,       setError]       = useState(null);
+  const [renderKey,   setRenderKey]   = useState(0);
+  const [doneModal,   setDoneModal]   = useState(null);   // { taskId, targetPhaseId }
+  const [showAddTask,   setShowAddTask]   = useState(false);
   const [showAddColumn, setShowAddColumn] = useState(false);
-  const [detailTask, setDetailTask] = useState(null);
+  const [detailTask,    setDetailTask]    = useState(null);
 
   // ── Load on mount ─────────────────────────────────────────
   useEffect(() => {
     async function load() {
       try {
         setLoading(true);
-        const [statusData, severityData, taskData, userData] =
+        const [phaseData, statusData, severityData, taskData, userData] =
           await Promise.all([
+            fetchPhases(),
             fetchStatuses(),
             fetchSeverities(),
             fetchTasks(),
             fetchUsers(),
           ]);
+        setPhases(phaseData);
         setStatuses(statusData);
         setSeverities(severityData);
         setTasks(taskData);
@@ -57,77 +63,74 @@ export default function App() {
     load();
   }, []);
 
-  // ── Derived: group tasks by statusId ─────────────────────
-  const tasksByStatus = statuses.reduce((acc, s) => {
-    acc[s.id] = tasks.filter((t) => t.statusId === s.id);
+  // ── Derived: group tasks by phaseId for the board ─────────
+  const tasksByPhase = phases.reduce((acc, p) => {
+    acc[p.id] = tasks.filter((t) => t.phaseId === p.id);
     return acc;
   }, {});
 
   const findTask = useCallback(
     (taskId) => tasks.find((t) => t.id === taskId),
-    [tasks],
+    [tasks]
   );
 
-  // ── Drag end ──────────────────────────────────────────────
+  // ── Drag end — fromPhaseId / toPhaseId ────────────────────
   const handleDragEnd = useCallback(
-    async (fromStatusId, toStatusId, taskId) => {
-      if (fromStatusId === toStatusId) return;
-      const targetStatus = statuses.find((s) => s.id === toStatusId);
+    async (fromPhaseId, toPhaseId, taskId) => {
+      if (fromPhaseId === toPhaseId) return;
+      const targetPhase = phases.find((p) => p.id === toPhaseId);
 
-      if (targetStatus?.isFinal) {
-        setDoneModal({ taskId, targetStatusId: toStatusId });
+      if (targetPhase?.isFinal) {
+        // Show Done confirmation modal before committing
+        setDoneModal({ taskId, targetPhaseId: toPhaseId });
       } else {
         try {
+          // Optimistic update
           setTasks((prev) =>
             prev.map((t) =>
               t.id === taskId
-                ? {
-                    ...t,
-                    statusId: toStatusId,
-                    statusLabel: targetStatus?.label,
-                  }
-                : t,
-            ),
+                ? { ...t, phaseId: toPhaseId, phaseLabel: targetPhase?.label }
+                : t
+            )
           );
           setRenderKey((k) => k + 1);
-          await moveTask(taskId, toStatusId);
+          await moveTask(taskId, toPhaseId);
         } catch (err) {
           console.error("Move failed:", err.message);
+          // Rollback
           setTasks((prev) =>
-            prev.map((t) =>
-              t.id === taskId ? { ...t, statusId: fromStatusId } : t,
-            ),
+            prev.map((t) => (t.id === taskId ? { ...t, phaseId: fromPhaseId } : t))
           );
           setRenderKey((k) => k + 1);
           alert(`Move failed: ${err.message}`);
         }
       }
     },
-    [statuses],
+    [phases]
   );
 
   // ── Done modal confirm ────────────────────────────────────
   const handleDoneConfirm = useCallback(
     async (actualEndDate) => {
       if (!doneModal) return;
-      const { taskId, targetStatusId } = doneModal;
-      const targetStatus = statuses.find((s) => s.id === targetStatusId);
+      const { taskId, targetPhaseId } = doneModal;
+      const targetPhase = phases.find((p) => p.id === targetPhaseId);
       try {
         setTasks((prev) =>
           prev.map((t) =>
             t.id === taskId
               ? {
                   ...t,
-                  statusId: targetStatusId,
-                  statusLabel: targetStatus?.label,
+                  phaseId:       targetPhaseId,
+                  phaseLabel:    targetPhase?.label,
                   actualEndDate,
-                  progress: 100,
+                  progress:      100,
                 }
-              : t,
-          ),
+              : t
+          )
         );
         setRenderKey((k) => k + 1);
-        const updated = await moveTask(taskId, targetStatusId, actualEndDate);
+        const updated = await moveTask(taskId, targetPhaseId, actualEndDate);
         setTasks((prev) => prev.map((t) => (t.id === taskId ? updated : t)));
       } catch (err) {
         console.error("Done confirm failed:", err.message);
@@ -136,7 +139,7 @@ export default function App() {
         setDoneModal(null);
       }
     },
-    [doneModal, statuses],
+    [doneModal, phases]
   );
 
   // ── Add task ──────────────────────────────────────────────
@@ -152,48 +155,31 @@ export default function App() {
     }
   }, []);
 
-  // ── Add column ────────────────────────────────────────────
-  // THE FIX: calls POST /api/statuses and calculates sortOrder automatically.
-  //
-  // BEFORE: pushed a local fake object { key, title, isFinal } into statuses
-  //         state only — never touched the DB, column vanished on refresh,
-  //         and the fake string key caused drag-and-drop to break.
-  //
-  // AFTER:  calculates sortOrder = max(existing sortOrders) + 1 so the new
-  //         column always appears at the right end. Calls createStatus() which
-  //         hits POST /api/statuses and returns the real DB row with a numeric
-  //         id. That real row is appended to statuses state so the board
-  //         renders the column immediately AND persists across refreshes.
+  // ── Add column (phase) ────────────────────────────────────
   const handleAddColumn = useCallback(
     async ({ label, isFinal, isDefault }) => {
-      // Calculate the next sortOrder so the new column appears at the end
-      const maxOrder = statuses.reduce(
-        (max, s) => Math.max(max, s.sortOrder ?? 0),
-        0,
+      const maxOrder = phases.reduce(
+        (max, p) => Math.max(max, p.sortOrder ?? 0),
+        0
       );
-
-      const saved = await createStatus({
+      const saved = await createPhase({
         label,
-        isFinal: isFinal ? 1 : 0,
+        isFinal:   isFinal   ? 1 : 0,
         isDefault: isDefault ? 1 : 0,
         sortOrder: maxOrder + 1,
       });
-
-      // Append the real DB row (has numeric id, correct sortOrder, etc.)
-      setStatuses((prev) => [...prev, saved]);
+      setPhases((prev) => [...prev, saved]);
       setShowAddColumn(false);
       setRenderKey((k) => k + 1);
-
-      // The modal catches any thrown errors and shows them inline
     },
-    [statuses],
+    [phases]
   );
 
   // ── Edit task fields ──────────────────────────────────────
   const handleEditTask = useCallback(async (taskId, payload) => {
     try {
       const updated = await updateTask(taskId, payload);
-      setTasks((prev) => prev.map((t) => (t.id === taskId ? updated : t)));
+      setTasks((prev)     => prev.map((t) => (t.id === taskId ? updated : t)));
       setDetailTask((prev) => (prev?.id === taskId ? updated : prev));
     } catch (err) {
       console.error("Edit task failed:", err.message);
@@ -230,7 +216,7 @@ export default function App() {
   }, []);
 
   const totalTasks = tasks.length;
-  const doneTask = doneModal ? findTask(doneModal.taskId) : null;
+  const doneTask   = doneModal ? findTask(doneModal.taskId) : null;
 
   // ── Loading ───────────────────────────────────────────────
   if (loading) {
@@ -246,9 +232,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
         <div className="bg-white rounded-2xl shadow p-6 max-w-sm text-center space-y-3">
-          <p className="text-red-500 font-semibold">
-            Could not connect to the server
-          </p>
+          <p className="text-red-500 font-semibold">Could not connect to the server</p>
           <p className="text-sm text-gray-500">{error}</p>
           <p className="text-xs text-gray-400">
             Make sure the Express backend is running on{" "}
@@ -267,13 +251,13 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
+
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Kanban Board</h1>
           <p className="text-sm text-gray-400 mt-0.5">
-            {totalTasks} task{totalTasks !== 1 ? "s" : ""} across{" "}
-            {statuses.length} columns
+            {totalTasks} task{totalTasks !== 1 ? "s" : ""} across {phases.length} phases
           </p>
         </div>
         <div className="flex gap-2">
@@ -281,7 +265,7 @@ export default function App() {
             onClick={() => setShowAddColumn(true)}
             className="bg-gray-700 text-white px-4 py-2 rounded-xl hover:bg-gray-800 transition text-sm shadow"
           >
-            + Add column
+            + Add phase
           </button>
           <button
             onClick={() => setShowAddTask(true)}
@@ -292,10 +276,10 @@ export default function App() {
         </div>
       </div>
 
-      {/* Board */}
+      {/* Board — columns = phases, tasks grouped by phaseId */}
       <KanbanBoard
-        columns={statuses}
-        tasks={tasksByStatus}
+        columns={phases}
+        tasks={tasksByPhase}
         renderKey={renderKey}
         onDragEnd={handleDragEnd}
         onCardClick={handleCardClick}
@@ -307,6 +291,7 @@ export default function App() {
           task={detailTask}
           users={users}
           severities={severities}
+          statuses={statuses}
           onUpdate={(taskId, fields) => {
             if (fields.subtasks !== undefined) {
               handleUpdateSubtasks(taskId, fields.subtasks);
@@ -318,7 +303,7 @@ export default function App() {
         />
       )}
 
-      {/* Done modal */}
+      {/* Done modal — fires when card is dropped on an isFinal phase */}
       {doneModal && doneTask && (
         <DoneModal
           taskName={doneTask.title}
@@ -333,12 +318,12 @@ export default function App() {
           onAdd={handleAddTask}
           onClose={() => setShowAddTask(false)}
           users={users}
-          statuses={statuses}
+          phases={phases}
           severities={severities}
         />
       )}
 
-      {/* Add column modal */}
+      {/* Add phase/column modal */}
       {showAddColumn && (
         <AddColumnModal
           onAdd={handleAddColumn}

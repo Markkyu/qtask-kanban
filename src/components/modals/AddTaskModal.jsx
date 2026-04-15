@@ -1,34 +1,23 @@
-import { useState, useRef } from "react";
-import { Upload } from "lucide-react";
+import { useState } from "react";
 
 /**
  * AddTaskModal
- *
- * Three behaviours requested:
- *
- * 1. Severity dropdown populated from the DB (severities prop).
- * 2. Quick-add: once a title is typed the user can press Enter or click
- *    "Quick Add" to immediately create the task in the default (isDefault)
- *    column with just the title. The rest of the fields are optional.
- * 3. Full form layout is preserved — all fields are still present and
- *    functional for when the PM wants to fill in more detail.
  *
  * Props:
  *   onAdd       — fn(payload)
  *   onClose     — fn()
  *   users       — [{ id, name, role }]
- *   statuses    — [{ id, label, isDefault, isFinal }]
+ *   phases      — [{ id, label, isDefault, isFinal }]  ← Kanban columns
  *   severities  — [{ id, label }]
  */
-
 export default function AddTaskModal({
   onAdd,
   onClose,
   users = [],
-  statuses = [],
+  phases = [],
   severities = [],
 }) {
-  const defaultStatus = statuses.find((s) => s.isDefault) ?? statuses[0];
+  const defaultPhase = phases.find((p) => p.isDefault) ?? phases[0];
 
   const [form, setForm] = useState({
     title: "",
@@ -41,17 +30,16 @@ export default function AddTaskModal({
 
   const set = (k, v) => setForm((prev) => ({ ...prev, [k]: v }));
 
-  // Build the payload — statusId always goes to the default column
   const buildPayload = () => ({
     title: form.title.trim(),
     description: form.description.trim() || null,
-    statusId: defaultStatus?.id ?? undefined,
+    phaseId: defaultPhase?.id ?? undefined, // lands in the default phase column
+    statusId: 1, // default "To Do" status
     assigneeId: form.assigneeId ? Number(form.assigneeId) : null,
     severityId: form.severityId ? Number(form.severityId) : null,
     targetDate: form.targetDate || null,
   });
 
-  // Full form submit (Add Task button or Enter in any field)
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.title.trim() || adding) return;
@@ -63,8 +51,7 @@ export default function AddTaskModal({
     }
   };
 
-  // Quick-add: Enter key on the title field only submits if no other
-  // field has been filled — gives the user a chance to use quick flow
+  // Enter on the title field = quick-add to the default phase
   const handleTitleKeyDown = (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -73,20 +60,6 @@ export default function AddTaskModal({
   };
 
   const canSubmit = form.title.trim().length > 0 && !adding;
-
-  const fileInputRef = useRef(null);
-  const [fileName, setFileName] = useState("");
-
-  const handleClick = () => {
-    fileInputRef.current.click();
-  };
-
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setFileName(file.name);
-    }
-  };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -104,7 +77,7 @@ export default function AddTaskModal({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-3">
-          {/* ── Title — quick-add hint shown below ── */}
+          {/* Title */}
           <div className="space-y-1">
             <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
               Title *
@@ -118,19 +91,18 @@ export default function AddTaskModal({
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
               required
             />
-            {/* Quick-add hint — only shown once the user starts typing */}
             {form.title.trim().length > 0 && (
               <p className="text-xs text-blue-500">
                 Press Enter to add instantly to{" "}
                 <span className="font-medium">
-                  {defaultStatus?.label ?? "default column"}
+                  {defaultPhase?.label ?? "default phase"}
                 </span>
                 , or fill in details below.
               </p>
             )}
           </div>
 
-          {/* ── Description ── */}
+          {/* Description */}
           <div className="space-y-1">
             <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
               Description
@@ -144,7 +116,7 @@ export default function AddTaskModal({
             />
           </div>
 
-          {/* ── Assignee + Severity side by side ── */}
+          {/* Assignee + Severity */}
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
               <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
@@ -183,7 +155,7 @@ export default function AddTaskModal({
             </div>
           </div>
 
-          {/* ── Target date ── */}
+          {/* Target date */}
           <div className="space-y-1">
             <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
               Target date
@@ -196,33 +168,7 @@ export default function AddTaskModal({
             />
           </div>
 
-          {/* ── Upload File ── */}
-          <div className="flex flex-col items-center gap-3">
-            <label className="w-full text-xs font-medium uppercase text-gray-500">
-              Upload File
-            </label>
-            {/* Hidden Input */}
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileChange}
-              className="hidden"
-            />
-            {/* Custom Upload Button */}
-            <div
-              onClick={handleClick}
-              className="flex flex-col items-center justify-center gap-2 p-2 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:bg-gray-50 transition w-full"
-            >
-              <Upload size={24} className="text-gray-500" />
-              <p className="text-sm text-gray-400">Click to upload a file</p>
-            </div>
-            {/* File Name Display */}
-            {fileName && (
-              <p className="text-sm text-green-600">Selected: {fileName}</p>
-            )}
-          </div>
-
-          {/* ── Actions ── */}
+          {/* Actions */}
           <div className="flex gap-2 justify-end pt-1">
             <button
               type="button"
