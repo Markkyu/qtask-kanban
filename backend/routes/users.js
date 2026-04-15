@@ -7,7 +7,7 @@ const pool = require("../config/db");
 router.get("/", async (req, res) => {
   try {
     const [rows] = await pool.query(
-      "SELECT id, name, username, role FROM users WHERE isActive = 1 ORDER BY name ASC"
+      "SELECT id, name, username, role FROM users WHERE isActive = 1 ORDER BY name ASC",
     );
     res.json(rows);
   } catch (err) {

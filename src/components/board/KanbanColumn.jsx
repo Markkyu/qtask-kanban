@@ -1,17 +1,5 @@
 import TaskCard from "./TaskCard";
 
-// Might delete this color since the db already stores the color for each column
-function colAccent(col) {
-  if (col.isFinal) return "border-t-emerald-400";
-  const l = col.label.toLowerCase();
-  if (l.includes("active") || l.includes("progress"))
-    return "border-t-amber-400";
-  if (l.includes("review") || l.includes("verification"))
-    return "border-t-purple-400";
-  if (l.includes("blocked") || l.includes("failed")) return "border-t-red-400";
-  return "border-t-gray-300";
-}
-
 /**
  * KanbanColumn
  * Width is w-60 (240px) — slightly narrower than before to show more columns

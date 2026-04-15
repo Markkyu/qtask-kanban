@@ -20,6 +20,7 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 // ── Routes ───────────────────────────────────────────────────
 app.use("/api/register", require("./routes/register"));
 app.use("/api/login", require("./routes/login"));
+app.use("/api/phases", require("./routes/phases"));
 app.use("/api/statuses", require("./routes/statuses"));
 app.use("/api/severities", require("./routes/severities"));
 app.use("/api/tasks", require("./routes/tasks"));
